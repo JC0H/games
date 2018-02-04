@@ -1,106 +1,138 @@
 package wave;
 
-import wave.objects.HP;
-import wave.objects.Handler;
-import wave.objects.ID;
-import wave.objects.KeyInput;
-import wave.objects.entity.Player;
-import wave.objects.entity.StandartEnemy;
-
 import java.awt.*;
 import java.awt.image.BufferStrategy;
 import java.util.Random;
 
 public class Game extends Canvas {
 
-    public static final int WIDTH = 640;
-    public static final int HEIGHT = WIDTH / 12 * 9;
+    public static final int WIDTH = 640,HEIGHT = WIDTH / 12 * 9;
     private Thread thread;
     private boolean running = false;
-    private Window window;
     private BufferStrategy bs;
     private Graphics g;
     private Handler handler;
-    private String title = "Wave 1.0";
-    private Random rand = new Random();
-    private HP health;
+    private Window window;
+    private String title = "FPS : ";
+    private HP hp;
+    private Spawn spawn;
+    private static Random rand = new Random();
+    private Menu menu;
+
+    public enum STATE{
+        Menu,
+        Help,
+        End,
+        Game;
+    };
+
+    public static STATE gameState = STATE.Menu;
 
     public Game(){
-        window = new Window(WIDTH,HEIGHT, this);
         handler = new Handler();
-        this.addKeyListener(new KeyInput(handler));
-        health = new HP();
+        hp = new HP();
+        menu = new Menu(this,handler ,hp);
+        addKeyListener(new KeyInput(handler));
+        addMouseListener(menu);
 
+        window = new Window(WIDTH, HEIGHT, this);
+        spawn = new Spawn(hp,handler);
 
-
-
-        handler.addObject(new Player(100,100, ID.Player, handler));
-        handler.addObject(new StandartEnemy(rand.nextInt(WIDTH), rand.nextInt(HEIGHT),ID.SimpleEnemy, handler));
+        if (gameState == STATE.Game) {
+            handler.addObject(new Player(WIDTH / 2 - 32, HEIGHT / 2 - 32, ID.Player, handler));
+            handler.addObject(new BasicEnemy(rand.nextInt(Game.WIDTH - 50), rand.nextInt(Game.WIDTH - 50), ID.BasicEnemy, handler));
+        }else{
+            for (int i = 0; i < 20; i++) {
+                handler.addObject(new MenuParticle(rand.nextInt(WIDTH), rand.nextInt(HEIGHT), ID.MenuParticle, handler));
+            }
+        }
     }
 
-    public synchronized void start(){
+    private void start(){
         this.requestFocus();
         running = true;
-        thread = new Thread(()->{
-            long jvmLastTime = System.nanoTime();
-            long time = System.currentTimeMillis();
+        thread = new Thread(() -> {
             double jvmPartTime = 1_000_000_000.0 / 60.0;
             double delta = 0;
-            int updates = 0;
-            int frames = 0;
-            while (running){
-                long jvmNowTime = System.nanoTime();
-                delta += jvmNowTime - jvmLastTime;
-                jvmLastTime = jvmNowTime;
-                if (delta >=jvmPartTime){
+            long jvmLastTime = System.nanoTime();
+            long updates = 0;
+            long frames = 0;
+            long time = System.currentTimeMillis();
+            while(running){
+                long jvmCurrentTime = System.nanoTime();
+                delta +=  jvmCurrentTime - jvmLastTime;
+                jvmLastTime = jvmCurrentTime;
+                if (delta > jvmPartTime){
                     tick();
                     updates++;
                     delta = 0;
                 }
                 render();
                 frames++;
-
+                
                 if (System.currentTimeMillis() - time > 1000){
-                    time+=1000;
-                    window.setTitle(title ,updates, frames);
-                    updates=0;
-                    frames=0;
+                    time+= 1000;
+                    window.setTitle(title, updates, frames);
+                    
+                    updates = 0;
+                    frames = 0;
                 }
-
             }
         });
         thread.start();
     }
 
-    private void render() {
-        bs = this.getBufferStrategy();
-        if (bs == null){
-            this.createBufferStrategy(3);
-            return;
+    private void tick(){
+        handler.tick();
+
+        if (gameState == STATE.Game) {
+            hp.tick();
+            spawn.tick();
+
+            if (HP.HEALTH <= 0){
+                HP.HEALTH = 100;
+                handler.clearEnemys();
+//                hp.setLevel(1);
+//                hp.setScore(0);
+                gameState = STATE.End;
+
+                for (int i = 0; i < 20; i++) {
+                    handler.addObject(new MenuParticle(rand.nextInt(WIDTH), rand.nextInt(HEIGHT), ID.MenuParticle, handler));
+                }
+            }
+
+        }else if (gameState == STATE.Menu || gameState == STATE.End ){
+            menu.tick();
         }
+    }
+
+    private void render() {
+        if (bs == null)
+            createBufferStrategy(3);
+        bs = getBufferStrategy();
         g = bs.getDrawGraphics();
+
         g.setColor(Color.BLACK);
-        g.fillRect(0,0,WIDTH,HEIGHT);
+        g.fillRect(0,0,getWidth(),getHeight());
 
         handler.render(g);
-        health.render(g);
+        if (gameState == STATE.Game) {
+            hp.render(g);
+        }else if (gameState == STATE.Menu ||gameState == STATE.Help ){
+            menu.render(g);
+        }
+
         g.dispose();
         bs.show();
     }
 
-    private void tick() {
-        handler.tick();
-        health.tick();
-    }
-
-    public static float clamp(float val, float min, float max ){
-        if (val >= max) return val = max;
-        else if (val <= min) return val = min;
-        else return val;
+    public static float clamp(float alpha, float min, float max){
+        if (alpha >= max) return alpha = max;
+        else if (alpha <= min) return alpha = min;
+        else return alpha;
     }
 
     public static void main(String[] args) {
         new Game().start();
     }
-
 }
